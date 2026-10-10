@@ -1,0 +1,81 @@
+name: Test HomeLedger and deploy site with APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: homeledger-pages
+  cancel-in-progress: true
+
+jobs:
+  build-test-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
+
+      - name: Test and assemble Android app
+        run: gradle -p android --no-daemon :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Add successful APK to the website
+        run: node scripts/prepare-release.mjs
+
+      - name: Install website dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Lint and type-check website
+        run: |
+          npm run lint
+          npm run typecheck
+
+      - name: Build static website
+        run: npm run build
+        env:
+          NEXT_PUBLIC_BASE_PATH: /HomeLeadger
+
+      - name: Upload installable APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: homeledger-debug-apk
+          path: public/downloads/homeledger.apk
+          if-no-files-found: error
+
+      - name: Upload GitHub Pages site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./out
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

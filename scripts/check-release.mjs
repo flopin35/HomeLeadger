@@ -1,0 +1,11 @@
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { resolve, sep } from 'node:path';
+const config = JSON.parse(await readFile(new URL('../src/config/release.json', import.meta.url), 'utf8'));
+if (!['coming_soon', 'available', 'unavailable'].includes(config.status)) throw new Error('Invalid release status in src/config/release.json.');
+if (config.status !== 'available') process.exit(0);
+if (!config.version?.trim()) throw new Error('Set a verified release version before making the APK available.');
+if (/^https:\/\//i.test(config.downloadUrl)) process.exit(0);
+if (!config.downloadUrl?.startsWith('/')) throw new Error('Use a site-relative APK path or an absolute HTTPS download URL.');
+const publicDir = resolve('public'), target = resolve(publicDir, `.${config.downloadUrl}`);
+if (!target.startsWith(`${publicDir}${sep}`) || !existsSync(target)) throw new Error(`APK marked available but no file exists at ${target}.`);
