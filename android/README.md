@@ -4,7 +4,7 @@ Native Android app built with Kotlin, Jetpack Compose Material 3, and Room. The 
 
 ## Open and build
 
-Open the `android/` directory in Android Studio with JDK 17 and Android SDK 36 installed. The GitHub Actions workflow uses Gradle 9.4.1 and AGP 9.2.0.
+Open the `android/` directory in Android Studio with JDK 17 and Android SDK 37 installed. The GitHub Actions workflow uses Gradle 9.4.1 and AGP 9.2.0.
 
 ```sh
 gradle -p android :app:testDebugUnitTest :app:assembleDebug
