@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.homeledger.app"
     compileSdk = 37
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "com.homeledger.app"
