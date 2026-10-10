@@ -141,9 +141,10 @@ fun CategoryBreakdown(summary: SpendingSummary, currency: String) {
                     Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center) { Icon(iconFor(total.category.icon), contentDescription = total.category.name, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp)) }
                     Column(Modifier.weight(1f).padding(start = 10.dp)) {
                         Text(total.category.name, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        val barColor = MaterialTheme.colorScheme.primary
                         androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().padding(top = 6.dp).height(5.dp)) {
                             drawRoundRect(color = Color(0xFFE8EEE9), cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f))
-                            drawRoundRect(color = MaterialTheme.colorScheme.primary, size = androidx.compose.ui.geometry.Size(size.width * total.percent.coerceIn(0, 100) / 100f, size.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f))
+                            drawRoundRect(color = barColor, size = androidx.compose.ui.geometry.Size(size.width * total.percent.coerceIn(0, 100) / 100f, size.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f))
                         }
                     }
                     Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 10.dp)) { Text(formatMoney(total.amountMinor, currency), fontSize = 12.sp, fontWeight = FontWeight.SemiBold); Text("${total.percent}%", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -236,13 +237,14 @@ fun ReportsScreen(expenses: List<ExpenseEntity>, categories: List<CategoryEntity
 @Composable
 private fun TrendChart(values: Map<LocalDate, Long>) {
     val max = values.values.maxOrNull()?.coerceAtLeast(1L) ?: 1L
+    val barColor = MaterialTheme.colorScheme.primary
     Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Canvas(Modifier.fillMaxWidth().height(120.dp)) {
                 val step = size.width / values.size
                 values.values.forEachIndexed { index, value ->
                     val height = size.height * (value.toFloat() / max)
-                    drawRoundRect(MaterialTheme.colorScheme.primary, topLeft = androidx.compose.ui.geometry.Offset(index * step + step * .18f, size.height - height), size = androidx.compose.ui.geometry.Size(step * .64f, height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f))
+                    drawRoundRect(barColor, topLeft = androidx.compose.ui.geometry.Offset(index * step + step * .18f, size.height - height), size = androidx.compose.ui.geometry.Size(step * .64f, height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f))
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(values.keys.first().format(DateTimeFormatter.ofPattern("d MMM")), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(values.keys.last().format(DateTimeFormatter.ofPattern("d MMM")), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
