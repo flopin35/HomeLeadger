@@ -1,1 +1,1 @@
-{"status":"coming_soon","downloadUrl":"/downloads/homeledger.apk","version":"","sha256":"","notes":"","supportContact":""}
+{"status":"available","downloadUrl":"https://github.com/flopin35/HomeLeadger/releases/download/v0.1.0/HomeLedger-v0.1.0.apk","version":"0.1.0","sha256":"6ee0e5603fc4333d1070c12d38fb20649bd402195589f6861b28db44d04f38bf","notes":"First signed Android preview build. Verified in CI before publishing: release signature, package com.homeledger.app, version 0.1.0, checksum, and install-and-launch on an Android 15 emulator.","supportContact":""}
