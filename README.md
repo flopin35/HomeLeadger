@@ -1,6 +1,6 @@
 # HomeLedger website
 
-A static-export Next.js landing page for the planned HomeLedger Android expense tracker. The APK release state defaults to **coming soon**. The site only renders a working download link after a real APK is configured and the release is explicitly marked available.
+A static-export Next.js landing page for the HomeLedger Android expense tracker. The download state defaults to **coming soon** and only becomes available after a signed APK is published and verified.
 
 ## Requirements and local development
 
@@ -17,19 +17,24 @@ npm run build
 
 Open `http://localhost:3000` during development. The production build exports a static site to `out/`. Preview it with `npx serve out`.
 
-## Release configuration
+## Android release process
 
 Edit `src/config/release.json`, the single source for download and release metadata:
 
 - `status`: `coming_soon` (default), `available`, or `unavailable`.
-- `downloadUrl`: `/downloads/homeledger.apk` by default, or an absolute HTTPS URL for an externally hosted APK.
-- `version`: leave blank until a real version is verified.
-- `notes`: optional, verified release notes.
+- `downloadUrl`: the actual HTTPS GitHub Release APK asset URL.
+- `version`: the Android `versionName` verified in that APK.
+- `sha256`: the APK's verified SHA-256 checksum.
+- `notes`: verified release notes.
 - `supportContact`: optional `mailto:` link or HTTPS contact page.
 
-Before release, build and test the Android application separately. For a local APK, place the real file at `public/downloads/homeledger.apk`; the production build fails if status is `available` and the local file or verified version is missing. For an external HTTPS URL, verify the asset and test its download before switching the status. Never add a placeholder binary. `public/downloads/README.md` marks the intended location.
+The `android-release.yml` workflow builds a signed APK only when manually run from `main`. It reads the keystore and password from the `ANDROID_SIGNING_KEYSTORE_BASE64` and `ANDROID_SIGNING_STORE_PASSWORD` repository secrets, checks the signature, package, version, and checksum, installs and launches the APK on an Android emulator, then publishes the APK and checksum as a GitHub Release. Never commit a keystore or signing secret. Keep a secure backup of the release key; Android requires the same signing identity for future APK updates.
 
-Feature, offline, local storage, and backup language describes design intent until verified against an actual app release. Update claims when app behavior is confirmed. Device previews and Ghanaian cedi sample figures are illustrative artwork, not actual app screenshots or user data.
+Only after the release asset exists and its signature, package, version, emulator install, and checksum have passed verification should `src/config/release.json` be changed from `coming_soon` to `available`. The production site build checks the HTTPS release asset and checksum before publishing the download button. Never add a placeholder APK.
+
+Play Protect may show its "Uncommon" warning for a new direct-download app. A release signature provides a stable update identity; it does not create Play Protect reputation or imply Google review. Keep Play Protect enabled. If Google reports a harmful app or blocks the verified APK, stop distribution and follow Google's developer guidance rather than asking users to turn security checks off.
+
+Device previews and Ghanaian cedi sample figures are illustrative artwork, not actual app screenshots or user data.
 
 ## Deploy
 

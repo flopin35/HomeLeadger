@@ -1,0 +1,180 @@
+name: Build and publish signed Android release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: homeledger-android-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Install Android SDK build and smoke-test images
+        run: sdkmanager --channel=3 "platforms;android-37.0" "build-tools;37.0.0" "platforms;android-35" "system-images;android-35;google_apis;x86_64" "emulator"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
+
+      - name: Validate release version
+        id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(sed -nE 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' android/app/build.gradle.kts | head -n 1)"
+          version_code="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' android/app/build.gradle.kts | head -n 1)"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
+            echo "Invalid or missing Android versionName: $version" >&2
+            exit 1
+          fi
+          if [[ ! "$version_code" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Invalid or missing Android versionCode: $version_code" >&2
+            exit 1
+          fi
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release v$version already exists; increment versionName and versionCode before publishing another APK." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+
+      - name: Restore release keystore
+        shell: bash
+        env:
+          ANDROID_SIGNING_KEYSTORE_BASE64: ${{ secrets.ANDROID_SIGNING_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          : "${ANDROID_SIGNING_KEYSTORE_BASE64:?Missing repository secret ANDROID_SIGNING_KEYSTORE_BASE64}"
+          printf '%s' "$ANDROID_SIGNING_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/homeledger-release.p12"
+          chmod 600 "$RUNNER_TEMP/homeledger-release.p12"
+
+      - name: Run tests and assemble signed release APK
+        shell: bash
+        env:
+          ANDROID_SIGNING_KEYSTORE_FILE: ${{ runner.temp }}/homeledger-release.p12
+          ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${ANDROID_SIGNING_STORE_PASSWORD:?Missing repository secret ANDROID_SIGNING_STORE_PASSWORD}"
+          gradle -p android --no-daemon :app:testDebugUnitTest :app:assembleRelease
+
+      - name: Verify APK signature, package, version, and checksum
+        id: verify
+        shell: bash
+        env:
+          ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_VERSION_CODE: ${{ steps.version.outputs.version_code }}
+        run: |
+          set -euo pipefail
+          apk="android/app/build/outputs/apk/release/app-release.apk"
+          test -s "$apk"
+          build_tools="$ANDROID_HOME/build-tools/37.0.0"
+          "$build_tools/apksigner" verify --verbose --print-certs "$apk"
+          badging="$("$build_tools/aapt" dump badging "$apk")"
+          package_line="$(printf '%s\n' "$badging" | grep -m1 '^package:')"
+          [[ "$package_line" == *"name='com.homeledger.app'"* ]]
+          [[ "$package_line" == *"versionName='$RELEASE_VERSION'"* ]]
+          [[ "$package_line" == *"versionCode='$RELEASE_VERSION_CODE'"* ]]
+          apk_certificate="$("$build_tools/apksigner" verify --print-certs "$apk" | sed -nE 's/.*certificate SHA-256 digest: ([0-9a-fA-F:]+).*/\1/p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          keystore_certificate="$(keytool -exportcert -keystore "$RUNNER_TEMP/homeledger-release.p12" -storetype PKCS12 -alias homeledger-release -storepass "$ANDROID_SIGNING_STORE_PASSWORD" | sha256sum | cut -d ' ' -f 1)"
+          test -n "$apk_certificate"
+          test "$apk_certificate" = "$keystore_certificate"
+          mkdir -p "$RUNNER_TEMP/homeledger-release"
+          asset="HomeLedger-v${RELEASE_VERSION}.apk"
+          cp "$apk" "$RUNNER_TEMP/homeledger-release/$asset"
+          (cd "$RUNNER_TEMP/homeledger-release" && sha256sum "$asset" > "$asset.sha256")
+          apk_sha256="$(cut -d ' ' -f 1 "$RUNNER_TEMP/homeledger-release/$asset.sha256")"
+          echo "apk_sha256=$apk_sha256" >> "$GITHUB_OUTPUT"
+          echo "signing_cert_sha256=$apk_certificate" >> "$GITHUB_OUTPUT"
+          echo "apk_path=$RUNNER_TEMP/homeledger-release/$asset" >> "$GITHUB_OUTPUT"
+          echo "checksum_path=$RUNNER_TEMP/homeledger-release/$asset.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Install APK and launch on Android emulator
+        shell: bash
+        env:
+          APK_PATH: ${{ steps.verify.outputs.apk_path }}
+        run: |
+          set -euo pipefail
+          echo "no" | avdmanager create avd --force --name homeledger-release-smoke --package "system-images;android-35;google_apis;x86_64" --device pixel_2
+          "$ANDROID_HOME/emulator/emulator" -avd homeledger-release-smoke -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -no-snapshot -wipe-data > "$RUNNER_TEMP/homeledger-emulator.log" 2>&1 &
+          emulator_pid=$!
+          trap 'kill "$emulator_pid" 2>/dev/null || true' EXIT
+          timeout 180 adb wait-for-device
+          timeout 300 bash -c 'until [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" == "1" ]]; do sleep 2; done'
+          adb install -r "$APK_PATH"
+          adb shell am start -W -n com.homeledger.app/.MainActivity
+          sleep 5
+          test -n "$(adb shell pidof com.homeledger.app | tr -d '\r')"
+
+      - name: Publish verified APK as a GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          APK_SHA256: ${{ steps.verify.outputs.apk_sha256 }}
+          SIGNING_CERT_SHA256: ${{ steps.verify.outputs.signing_cert_sha256 }}
+          APK_PATH: ${{ steps.verify.outputs.apk_path }}
+          CHECKSUM_PATH: ${{ steps.verify.outputs.checksum_path }}
+        run: |
+          set -euo pipefail
+          notes="$RUNNER_TEMP/homeledger-release-notes.md"
+          printf '%s\n' \
+            "HomeLedger $RELEASE_VERSION - signed Android APK preview." \
+            "" \
+            "Package: com.homeledger.app" \
+            "APK SHA-256: $APK_SHA256" \
+            "Signing certificate SHA-256: $SIGNING_CERT_SHA256" \
+            "" \
+            'Google Play Protect may show its "Uncommon" warning for this direct-download app. That message is not itself a malware finding. Keep Play Protect enabled. If it reports a harmful app or blocks the APK for another reason, do not install it.' \
+            > "$notes"
+          gh release create "v$RELEASE_VERSION" "$APK_PATH" "$CHECKSUM_PATH" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "HomeLedger $RELEASE_VERSION" \
+            --notes-file "$notes"
+
+      - name: Record verification details
+        if: success()
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          APK_SHA256: ${{ steps.verify.outputs.apk_sha256 }}
+          SIGNING_CERT_SHA256: ${{ steps.verify.outputs.signing_cert_sha256 }}
+        run: |
+          {
+            echo "## HomeLedger $RELEASE_VERSION"
+            echo
+            echo "- Package: \`com.homeledger.app\`"
+            echo "- Signed release APK installed and launched on Android API 35 emulator."
+            echo "- APK SHA-256: \`$APK_SHA256\`"
+            echo "- Signing certificate SHA-256: \`$SIGNING_CERT_SHA256\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove temporary signing key
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/homeledger-release.p12"

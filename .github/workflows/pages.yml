@@ -1,4 +1,4 @@
-name: Test HomeLedger and deploy site with APK
+name: Test HomeLedger and deploy website
 
 on:
   push:
@@ -51,11 +51,8 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Add successful APK to the website
-        run: node scripts/prepare-release.mjs
-
       - name: Install website dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Lint and type-check website
         run: |
@@ -66,13 +63,6 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_BASE_PATH: /HomeLeadger
-
-      - name: Upload installable APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: homeledger-debug-apk
-          path: public/downloads/homeledger.apk
-          if-no-files-found: error
 
       - name: Upload GitHub Pages site
         uses: actions/upload-pages-artifact@v3

@@ -4,6 +4,22 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val releaseKeyStorePath = providers.environmentVariable("ANDROID_SIGNING_KEYSTORE_FILE").orNull
+val releaseKeyStorePassword = providers.environmentVariable("ANDROID_SIGNING_STORE_PASSWORD").orNull
+val releaseKeyAlias = "homeledger-release"
+val releaseBuildRequested = gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) }
+
+if (releaseBuildRequested) {
+    val missingSigningInputs = buildList {
+        if (releaseKeyStorePath.isNullOrBlank()) add("ANDROID_SIGNING_KEYSTORE_FILE")
+        if (releaseKeyStorePassword.isNullOrBlank()) add("ANDROID_SIGNING_STORE_PASSWORD")
+        if (!releaseKeyStorePath.isNullOrBlank() && !file(releaseKeyStorePath).isFile) add("keystore file at ANDROID_SIGNING_KEYSTORE_FILE")
+    }
+    if (missingSigningInputs.isNotEmpty()) {
+        throw GradleException("Release builds require valid signing inputs: ${missingSigningInputs.joinToString()}")
+    }
+}
+
 android {
     namespace = "com.homeledger.app"
     compileSdk {
@@ -22,8 +38,28 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            if (!releaseKeyStorePath.isNullOrBlank()) {
+                storeFile = file(releaseKeyStorePath)
+                storeType = "PKCS12"
+                storePassword = releaseKeyStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyStorePassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+
     buildFeatures { compose = true }
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -32,6 +68,7 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)
