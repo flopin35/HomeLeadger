@@ -68,7 +68,16 @@ jobs:
         run: |
           set -euo pipefail
           : "${ANDROID_SIGNING_KEYSTORE_BASE64:?Missing repository secret ANDROID_SIGNING_KEYSTORE_BASE64}"
-          printf '%s' "$ANDROID_SIGNING_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > "$RUNNER_TEMP/homeledger-release.p12"
+          encoded_keystore="$(printf '%s' "$ANDROID_SIGNING_KEYSTORE_BASE64" | tr -d '[:space:]')"
+          if [[ ! "$encoded_keystore" =~ ^[A-Za-z0-9+/]*={0,2}$ ]]; then
+            echo "Repository secret ANDROID_SIGNING_KEYSTORE_BASE64 contains non-Base64 characters. Replace it with the Base64 encoding of the PKCS#12 keystore." >&2
+            exit 1
+          fi
+          if (( ${#encoded_keystore} % 4 != 0 )); then
+            echo "Repository secret ANDROID_SIGNING_KEYSTORE_BASE64 has an invalid Base64 length (${#encoded_keystore} characters). Replace it with the full Base64 encoding of the PKCS#12 keystore." >&2
+            exit 1
+          fi
+          printf '%s' "$encoded_keystore" | base64 --decode > "$RUNNER_TEMP/homeledger-release.p12"
           chmod 600 "$RUNNER_TEMP/homeledger-release.p12"
 
       - name: Run tests and assemble signed release APK
@@ -79,7 +88,7 @@ jobs:
         run: |
           set -euo pipefail
           : "${ANDROID_SIGNING_STORE_PASSWORD:?Missing repository secret ANDROID_SIGNING_STORE_PASSWORD}"
-          gradle -p android --no-daemon :app:testDebugUnitTest :app:assembleRelease
+          keytool -list -storetype PKCS12 -keystore "$ANDROID_SIGNING_KEYSTORE_FILE" -alias homeledger-release -storepass:env ANDROID_SIGNING_STORE_PASSWORD >/dev/null 2>&1 || { echo "Release keystore password or alias is invalid." >&2; exit 1; }; gradle -p android --no-daemon :app:testDebugUnitTest :app:assembleRelease
 
       - name: Verify APK signature, package, version, and checksum
         id: verify
