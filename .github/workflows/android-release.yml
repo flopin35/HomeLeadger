@@ -68,7 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           : "${ANDROID_SIGNING_KEYSTORE_BASE64:?Missing repository secret ANDROID_SIGNING_KEYSTORE_BASE64}"
-          printf '%s' "$ANDROID_SIGNING_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/homeledger-release.p12"
+          printf '%s' "$ANDROID_SIGNING_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > "$RUNNER_TEMP/homeledger-release.p12"
           chmod 600 "$RUNNER_TEMP/homeledger-release.p12"
 
       - name: Run tests and assemble signed release APK
