@@ -133,9 +133,12 @@ jobs:
         shell: bash
         env:
           APK_PATH: ${{ steps.verify.outputs.apk_path }}
+          ANDROID_AVD_HOME: ${{ runner.temp }}/android-avd
         run: |
           set -euo pipefail
+          mkdir -p "$ANDROID_AVD_HOME"
           echo "no" | avdmanager create avd --force --name homeledger-release-smoke --package "system-images;android-35;google_apis;x86_64" --device pixel_2
+          avdmanager list avd || true
           "$ANDROID_HOME/emulator/emulator" -avd homeledger-release-smoke -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -no-snapshot -wipe-data > "$RUNNER_TEMP/homeledger-emulator.log" 2>&1 &
           emulator_pid=$!
           trap 'status=$?; kill "$emulator_pid" 2>/dev/null || true; if (( status != 0 )); then echo "--- emulator log (last 80 lines) ---"; tail -n 80 "$RUNNER_TEMP/homeledger-emulator.log" || true; fi' EXIT
